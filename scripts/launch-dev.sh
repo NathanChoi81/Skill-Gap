@@ -5,11 +5,11 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BACKEND="$ROOT/backend"
 FRONTEND="$ROOT/frontend"
 
-# Kill any process already using port 8000 so we always run the latest backend
+# Free port 8001 so the new backend can bind
 if command -v lsof >/dev/null 2>&1; then
-  PIDS=$(lsof -ti :8000 2>/dev/null || true)
+  PIDS=$(lsof -ti :8001 2>/dev/null || true)
   if [ -n "$PIDS" ]; then
-    echo "Stopping existing process on port 8000..."
+    echo "Stopping existing process on port 8001..."
     echo "$PIDS" | xargs kill -9 2>/dev/null || true
     sleep 1
   fi
@@ -24,7 +24,7 @@ trap cleanup SIGINT SIGTERM
 
 cd "$BACKEND"
 if [ -d .venv ]; then . .venv/bin/activate; elif [ -d venv ]; then . venv/bin/activate; fi
-python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000 &
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8001 &
 BACKEND_PID=$!
 
 sleep 2
@@ -32,7 +32,7 @@ cd "$FRONTEND"
 npm run dev &
 FRONTEND_PID=$!
 
-echo "Backend: http://localhost:8000"
+echo "Backend: http://localhost:8001"
 echo "Frontend: http://localhost:5173"
 echo "Press Ctrl+C to stop both."
 wait

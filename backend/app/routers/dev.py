@@ -1,7 +1,8 @@
 """Dev-only: job upload, courses upload, skills unmapped/map/propose-mappings."""
 import json
 import logging
-from datetime import datetime
+import time
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, UploadFile
 from pydantic import BaseModel
@@ -9,14 +10,19 @@ from sqlalchemy.orm import Session
 
 import fitz
 
-from app.auth.deps import get_current_user, require_dev
+from app.auth.deps import require_dev
 from app.clients.ollama import extract_job_structured, propose_skill_mappings
+from app.config import get_settings
 from app.db import get_db
 from app.exceptions import APIError
 from app.models import JobPosting, JobSkill, Role, Skill, Course
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dev", tags=["dev"])
+
+# Process job PDFs in small batches so Ollama doesn't time out (e.g. 20 in one request).
+OLLAMA_JOB_BATCH_SIZE = 4
+OLLAMA_BATCH_DELAY_SEC = 2.0
 
 
 class MapSkillIn(BaseModel):
@@ -39,59 +45,64 @@ def dev_jobs_upload(
     user=Depends(require_dev),
     db: Session = Depends(get_db),
 ):
+    pdf_files = [f for f in files if f.filename and f.filename.lower().endswith(".pdf")]
+    if not pdf_files:
+        return {"uploaded": 0, "jobs": []}
     created = []
-    for f in files:
-        if not f.filename or not f.filename.lower().endswith(".pdf"):
-            continue
-        content = f.file.read()
-        text = _extract_pdf_text(content)
-        data = extract_job_structured(text)
-        if not data:
-            title_original = f.filename.replace(".pdf", "")
-            role_canonical = "Unknown"
-            degree_required = None
-            experience_required = None
-            excerpt = text[:500] if text else None
-            skills = {"required": [], "preferred": [], "description": []}
-            derived_by = "fallback"
-        else:
-            title_original = data.get("title_original") or "Unknown"
-            role_canonical = data.get("role_canonical") or "Unknown"
-            degree_required = data.get("degree_required")
-            experience_required = data.get("experience_required")
-            excerpt = data.get("what_you_will_do_excerpt")
-            skills = data.get("skills") or {"required": [], "preferred": [], "description": []}
-            derived_by = "ai"
-        role = db.query(Role).filter(Role.name == role_canonical).first()
-        if not role:
-            role = Role(name=role_canonical)
-            db.add(role)
+    for batch_start in range(0, len(pdf_files), OLLAMA_JOB_BATCH_SIZE):
+        batch = pdf_files[batch_start : batch_start + OLLAMA_JOB_BATCH_SIZE]
+        for f in batch:
+            content = f.file.read()
+            text = _extract_pdf_text(content)
+            data = extract_job_structured(text)
+            if not data:
+                title_original = (f.filename or "").replace(".pdf", "") or "Unknown"
+                role_canonical = "Unknown"
+                degree_required = None
+                experience_required = None
+                excerpt = text[:500] if text else None
+                skills = {"required": [], "preferred": [], "description": []}
+                derived_by = "fallback"
+            else:
+                title_original = data.get("title_original") or (f.filename or "").replace(".pdf", "") or "Unknown"
+                role_canonical = data.get("role_canonical") or "Unknown"
+                degree_required = data.get("degree_required")
+                experience_required = data.get("experience_required")
+                excerpt = data.get("what_you_will_do_excerpt")
+                skills = data.get("skills") or {"required": [], "preferred": [], "description": []}
+                derived_by = "ai"
+            role = db.query(Role).filter(Role.name == role_canonical).first()
+            if not role:
+                role = Role(name=role_canonical)
+                db.add(role)
+                db.flush()
+            job = JobPosting(
+                role_id=role.id,
+                title_original=title_original,
+                pdf_text=text,
+                degree_required=degree_required,
+                experience_required=experience_required,
+                what_you_will_do_excerpt=excerpt,
+                derived_by=derived_by,
+            )
+            db.add(job)
             db.flush()
-        job = JobPosting(
-            role_id=role.id,
-            title_original=title_original,
-            pdf_text=text,
-            degree_required=degree_required,
-            experience_required=experience_required,
-            what_you_will_do_excerpt=excerpt,
-            derived_by=derived_by,
-        )
-        db.add(job)
-        db.flush()
-        for sname in skills.get("required") or []:
-            skill = _get_or_create_skill(db, sname)
-            if skill:
-                db.add(JobSkill(job_id=job.id, skill_id=skill.id, skill_type="required"))
-        for sname in skills.get("preferred") or []:
-            skill = _get_or_create_skill(db, sname)
-            if skill:
-                db.add(JobSkill(job_id=job.id, skill_id=skill.id, skill_type="preferred"))
-        for sname in skills.get("description") or []:
-            skill = _get_or_create_skill(db, sname)
-            if skill:
-                db.add(JobSkill(job_id=job.id, skill_id=skill.id, skill_type="description"))
-        created.append({"id": job.id, "title_original": title_original, "role_id": role.id})
-    db.commit()
+            for sname in skills.get("required") or []:
+                skill = _get_or_create_skill(db, sname)
+                if skill:
+                    db.add(JobSkill(job_id=job.id, skill_id=skill.id, skill_type="required"))
+            for sname in skills.get("preferred") or []:
+                skill = _get_or_create_skill(db, sname)
+                if skill:
+                    db.add(JobSkill(job_id=job.id, skill_id=skill.id, skill_type="preferred"))
+            for sname in skills.get("description") or []:
+                skill = _get_or_create_skill(db, sname)
+                if skill:
+                    db.add(JobSkill(job_id=job.id, skill_id=skill.id, skill_type="description"))
+            created.append({"id": job.id, "title_original": title_original, "role_id": role.id})
+        db.commit()
+        if batch_start + len(batch) < len(pdf_files):
+            time.sleep(OLLAMA_BATCH_DELAY_SEC)
     return {"uploaded": len(created), "jobs": created}
 
 

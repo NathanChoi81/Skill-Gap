@@ -553,7 +553,7 @@ Routes:
 ### Fixtures
 - skills seed
 - courses.json
-- synthetic job PDFs for ingestion tests
+- synthetic job PDFs for upload tests
 
 ### E2E critical path tests
 1) Register → Login

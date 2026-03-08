@@ -39,3 +39,9 @@ test-results/
 # Logs
 *.log
 logs/
+
+# Local example PDFs (can be adjusted later)
+01_Backend_Software_Engineer_Nimbus_Analytics.pdf
+
+# Ingestion state (do not commit)
+.ingested

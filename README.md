@@ -2,7 +2,7 @@
 
 SkillGap is a locally hosted, security-forward career intelligence platform that helps users understand and close the gap between their current skills and target roles.
 
-- **backend/**: FastAPI + SQLAlchemy + SQLite, auth (JWT + HTTP-only cookies), resume upload with PII redaction and AI/fallback extraction, roles, jobs, gaps, courses, plan, and dev ingestion. AI via TinyLlama (Ollama).
+- **backend/**: FastAPI + SQLAlchemy + SQLite, auth (JWT + HTTP-only cookies), resume upload with PII redaction and AI/fallback extraction, roles, jobs, gaps, courses, plan, and dev job/course upload. AI via TinyLlama (Ollama).
 - **frontend/**: React + TypeScript + Vite + Tailwind. Landing (login/register, no navbar); app shell with navbar after login; Dashboard, Roles, Jobs, Skills, Plan, Settings, and Dev pages.
 
 ## Prerequisites
@@ -71,8 +71,3 @@ Run from the **project root** (same directory as this README).
   npx playwright install
   npm run e2e
   ```
-
-## Pushing to GitHub
-
-The repo is ready to push. No GitHub Actions are configured; add workflows later if desired. Ensure `.env` and `*.db` are not committed (see `.gitignore`).
-

@@ -40,7 +40,15 @@ export default function DevJobs() {
         credentials: 'include',
         body: form,
       })
-      const data = await res.json()
+      const text = await res.text()
+      let data: { uploaded?: number; jobs?: { id: number; title_original: string }[]; message?: string }
+      try {
+        data = text ? JSON.parse(text) : {}
+      } catch {
+        throw new Error(res.ok
+          ? 'Server returned invalid response (empty or not JSON). The request may have timed out—try fewer files.'
+          : `Upload failed: ${res.status} ${res.statusText}${text ? ` — ${text.slice(0, 100)}` : ''}`)
+      }
       if (!res.ok) throw new Error(data?.message || 'Upload failed')
       setResult(data)
       loadJobs()
