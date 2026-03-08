@@ -58,6 +58,7 @@ interface GapSkill {
   name: string
   type: string
   frequency: number
+  course_count?: number
 }
 
 interface PlanCurrent {
@@ -184,7 +185,12 @@ export default function Dashboard() {
           {mostNeededSkills.length ? (
             <ul className="list-disc list-inside text-sm text-gray-700">
               {mostNeededSkills.map((s) => (
-                <li key={s.skill_id}>{s.name}</li>
+                <li key={s.skill_id}>
+                  <Link to={`/skills/${s.skill_id}`} className="text-blue-600 hover:underline">
+                    {s.name}
+                    {(s.course_count ?? 0) > 0 && ` (${s.course_count} course${s.course_count !== 1 ? 's' : ''})`}
+                  </Link>
+                </li>
               ))}
             </ul>
           ) : (

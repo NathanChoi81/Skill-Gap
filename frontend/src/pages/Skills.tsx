@@ -8,6 +8,7 @@ interface Gap {
   name: string
   type: string
   frequency: number
+  course_count?: number
 }
 
 export default function Skills() {
@@ -44,12 +45,6 @@ export default function Skills() {
   const handleNotInterested = async (skillId: number, value: boolean) => {
     try {
       await api.post('/skills/not-interested', { skill_id: skillId, value })
-      setNotInterested((prev) => {
-        const next = new Set(prev)
-        if (value) next.add(skillId)
-        else next.delete(skillId)
-        return next
-      })
       if (roleId) {
         const list = await api.get<Gap[]>(`/roles/${roleId}/gaps`)
         setGaps(list)
@@ -71,19 +66,13 @@ export default function Skills() {
     }
   }
 
-  if (!roleId) {
-    return (
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 mb-4">Skill Gaps</h1>
-        <p className="text-gray-500">Select a role first.</p>
-      </div>
-    )
-  }
-
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-4">Skill Gap</h1>
       {error && <div className="mb-4 text-sm text-red-600 bg-red-50 p-3 rounded">{error}</div>}
+      {!roleId && <p className="mb-4 text-gray-500">Select a role to see gap analysis.</p>}
+      {roleId && (
+      <>
       <div className="flex flex-wrap gap-4 mb-4">
         <label className="flex items-center gap-2">
           <span className="text-sm text-gray-700">Sort</span>
@@ -128,6 +117,7 @@ export default function Skills() {
               <th className="px-4 py-2 text-left">Skill</th>
               <th className="px-4 py-2 text-left">Type</th>
               <th className="px-4 py-2 text-left">Frequency</th>
+              <th className="px-4 py-2 text-left">Courses</th>
               <th className="px-4 py-2 text-left">Actions</th>
             </tr>
           </thead>
@@ -139,6 +129,15 @@ export default function Skills() {
                 </td>
                 <td className="px-4 py-2">{g.type}</td>
                 <td className="px-4 py-2">{g.frequency}</td>
+                <td className="px-4 py-2">
+                  {(g.course_count ?? 0) > 0 ? (
+                    <Link to={`/skills/${g.skill_id}`} className="text-blue-600 hover:underline">
+                      {g.course_count} available
+                    </Link>
+                  ) : (
+                    <span className="text-gray-400">—</span>
+                  )}
+                </td>
                 <td className="px-4 py-2 flex gap-2">
                   <button
                     onClick={() => addSkill(g.skill_id)}
@@ -159,6 +158,8 @@ export default function Skills() {
           </tbody>
         </table>
       </div>
+      </>
+      )}
     </div>
   )
 }

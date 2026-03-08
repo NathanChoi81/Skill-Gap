@@ -25,14 +25,18 @@ def compute_role_aggregates(db: Session, role_id: int) -> dict:
     return {"skills": out}
 
 
-def get_or_compute_aggregates(db: Session, role_id: int) -> dict:
-    """Get stored aggregates or compute and store."""
-    agg = db.query(RoleAggregate).filter(RoleAggregate.role_id == role_id).first()
-    if agg:
-        try:
-            return json.loads(agg.aggregated_skill_frequency_json)
-        except json.JSONDecodeError:
-            pass
+def get_or_compute_aggregates(db: Session, role_id: int, force_recompute: bool = False) -> dict:
+    """Get stored aggregates or compute and store. If force_recompute=True, recompute from current job_skills."""
+    if not force_recompute:
+        agg = db.query(RoleAggregate).filter(RoleAggregate.role_id == role_id).first()
+        if agg:
+            try:
+                return json.loads(agg.aggregated_skill_frequency_json)
+            except json.JSONDecodeError:
+                pass
+    else:
+        db.query(RoleAggregate).filter(RoleAggregate.role_id == role_id).delete()
+        db.commit()
     data = compute_role_aggregates(db, role_id)
     from datetime import datetime
     row = db.query(RoleAggregate).filter(RoleAggregate.role_id == role_id).first()

@@ -13,6 +13,37 @@ from app.models import Course, UserCourseProgress, UserCourseMeta, UserSkill, Sk
 router = APIRouter(tags=["courses"])
 
 
+@router.get("/courses")
+def list_all_courses(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Return all courses with skill name, always available (not filtered by role/gaps)."""
+    courses = (
+        db.query(Course)
+        .outerjoin(Skill, Course.skill_id == Skill.id)
+        .order_by(Skill.name, Course.popularity_score.desc())
+        .all()
+    )
+    out = []
+    for c in courses:
+        skill_name = None
+        if c.skill_id:
+            s = db.query(Skill).filter(Skill.id == c.skill_id).first()
+            skill_name = s.name if s else None
+        out.append({
+            "id": c.id,
+            "title": c.title,
+            "skill_id": c.skill_id,
+            "skill_name": skill_name,
+            "difficulty": c.difficulty,
+            "duration_hours": c.duration_hours,
+            "format": c.format,
+            "url": c.url,
+        })
+    return out
+
+
 class StatusIn(BaseModel):
     status: str  # in_progress | complete
 

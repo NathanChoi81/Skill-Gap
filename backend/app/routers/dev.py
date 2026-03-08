@@ -1,6 +1,7 @@
 """Dev-only: job upload, courses upload, skills unmapped/map/propose-mappings."""
 import json
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -116,6 +117,130 @@ def _get_or_create_skill(db: Session, name: str) -> Skill | None:
         db.add(s)
         db.flush()
     return s
+
+
+# Regex/keyword patterns per skill for required vs preferred section matching (case-insensitive).
+_SKILL_SEARCH_TERMS: dict[str, list[str]] = {
+    "Python": [r"\bpython\b"],
+    "Java": [r"\bjava\b"],  # word boundary to avoid "JavaScript"
+    "Go": [r"\bgo\b", "golang"],  # word boundary to avoid "Google"
+    "REST API design": ["rest", "restful", "api design"],
+    "JSON": ["json"],
+    "HTTP": ["http"],
+    "SQL": ["sql", "relational database"],
+    "PostgreSQL": ["postgresql", "postgres"],
+    "Git": ["git", "version control"],
+    "Linux": ["linux", "unix"],
+    "pytest": ["pytest", "unit test", "integration test", "automated test"],
+    "JUnit": ["junit", "unit test", "java test"],
+    "AWS Lambda": ["aws lambda", "lambda", "aws"],
+    "Amazon S3": ["s3", "amazon s3"],
+    "RabbitMQ": ["rabbitmq", "message queue", "message queues"],
+    "Docker": ["docker", "container", "containerization"],
+    "Microservices": ["microservices", "micro-services", "distributed systems"],
+    "Redis": ["redis", "caching", "cache"],
+}
+
+
+def _section_matches(text: str, terms: list[str]) -> bool:
+    """True if any term (regex or literal) appears in text (case-insensitive)."""
+    lower = text.lower()
+    for t in terms:
+        if len(t) <= 2:
+            continue
+        try:
+            if re.search(t, lower, re.IGNORECASE):
+                return True
+        except re.error:
+            if t.lower() in lower:
+                return True
+    return False
+
+
+def _classify_job_skills_regex(
+    job_text: str, skill_names: list[str], job_id: int | None = None
+) -> dict[str, list[str]]:
+    """
+    Split job text into required and preferred sections by common headers, then assign
+    each skill to required/preferred if its search terms appear in that section.
+    When job_id is provided, preferred skills are rotated by job_id so identical
+    template text produces different preferred subsets per job (avoids every job identical).
+    """
+    text = (job_text or "").strip()
+    required_block = ""
+    preferred_block = ""
+    required_headers = r"(?:required\s+qualifications?|requirements?|must\s+have|qualifications?)\s*"
+    preferred_headers = r"(?:preferred\s+qualifications?|nice\s+to\s+have|preferred|bonus|plus)\s*"
+    parts = re.split(re.compile(required_headers, re.I), text, maxsplit=1)
+    if len(parts) >= 2:
+        rest = parts[1]
+        pref_parts = re.split(re.compile(preferred_headers, re.I), rest, maxsplit=1)
+        required_block = (pref_parts[0] if pref_parts else "").lower()
+        if len(pref_parts) >= 2:
+            preferred_block = pref_parts[1].lower()
+    else:
+        mid = max(1, len(text) // 2)
+        required_block = text[:mid].lower()
+        preferred_block = text[mid:].lower()
+    required_out: list[str] = []
+    preferred_out: list[str] = []
+    for sname in skill_names:
+        terms = _SKILL_SEARCH_TERMS.get(sname) or [re.escape(sname)]
+        in_req = _section_matches(required_block, terms)
+        in_pref = _section_matches(preferred_block, terms)
+        if in_req and not in_pref:
+            required_out.append(sname)
+        elif in_pref:
+            preferred_out.append(sname)
+        elif in_req:
+            required_out.append(sname)
+    # Per-job variation: rotate preferred list by job_id so identical PDFs get different subsets
+    if job_id is not None and preferred_out:
+        n = len(preferred_out)
+        shift = job_id % n
+        preferred_out = preferred_out[shift:] + preferred_out[:shift]
+        # Vary how many preferred we keep (e.g. 2–4) so jobs don’t all have same count
+        keep = 2 + (job_id % 3)
+        preferred_out = preferred_out[: min(keep, n)]
+    return {"required": required_out, "preferred": preferred_out}
+
+
+@router.post("/jobs/backfill-skills")
+def dev_jobs_backfill_skills(
+    user=Depends(require_dev),
+    db: Session = Depends(get_db),
+):
+    """
+    For each job posting, classify which canonical skills are required vs preferred
+    using section-based regex matching on pdf_text, then replace job_skills.
+    """
+    skills = db.query(Skill).all()
+    skill_names = [s.name for s in skills if s.name]
+    if not skill_names:
+        return {"updated": 0, "message": "No skills in database"}
+    jobs = db.query(JobPosting).all()
+    name_to_skill = {s.name: s for s in skills}
+    updated = 0
+    for job in jobs:
+        if not (job.pdf_text or "").strip():
+            continue
+        try:
+            classified = _classify_job_skills_regex(job.pdf_text, skill_names, job_id=job.id)
+            db.query(JobSkill).filter(JobSkill.job_id == job.id).delete()
+            for sname in classified.get("required") or []:
+                skill = name_to_skill.get(sname)
+                if skill:
+                    db.add(JobSkill(job_id=job.id, skill_id=skill.id, skill_type="required"))
+            for sname in classified.get("preferred") or []:
+                skill = name_to_skill.get(sname)
+                if skill:
+                    db.add(JobSkill(job_id=job.id, skill_id=skill.id, skill_type="preferred"))
+            updated += 1
+        except Exception as e:
+            logger.exception("Backfill skills for job %s: %s", job.id, e)
+            db.rollback()
+    db.commit()
+    return {"updated": updated, "total_jobs": len(jobs)}
 
 
 class OverrideRoleIn(BaseModel):

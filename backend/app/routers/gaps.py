@@ -5,9 +5,8 @@ from sqlalchemy.orm import Session
 from app.auth.deps import get_current_user_id
 from app.db import get_db
 from app.exceptions import APIError
-import json
 
-from app.models import Role, Skill, UserSkill, UserNotInterestedSkill, RoleAggregate
+from app.models import Course, Role, Skill, UserSkill, UserNotInterestedSkill, RoleAggregate
 from app.services.role_analysis import get_or_compute_aggregates
 
 router = APIRouter(tags=["gaps"])
@@ -25,7 +24,8 @@ def get_gaps(
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise APIError("ROLE_NOT_FOUND", "Role not found", 404)
-    data = get_or_compute_aggregates(db, role_id)
+    # Always recompute from current job_skills so dashboard and Skills page show up-to-date missing skills
+    data = get_or_compute_aggregates(db, role_id, force_recompute=True)
     skill_freq = {item["skill_id"]: item for item in data.get("skills", [])}
     user_skill_ids = set()
     for us in db.query(UserSkill).filter(UserSkill.user_id == user_id).all():
@@ -52,11 +52,13 @@ def get_gaps(
         if type_filter and skill_type != type_filter:
             continue
         frequency = req + pref + desc
+        course_count = db.query(Course).filter(Course.skill_id == sid).count()
         out.append({
             "skill_id": sid,
             "name": s.name,
             "type": skill_type,
             "frequency": frequency,
+            "course_count": course_count,
         })
     if sort == "frequency":
         out.sort(key=lambda x: -x["frequency"])

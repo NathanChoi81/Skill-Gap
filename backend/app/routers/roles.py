@@ -69,7 +69,7 @@ def analyze_role(role_id: int, user_id: int = Depends(get_current_user_id), db: 
     role = db.query(Role).filter(Role.id == role_id).first()
     if not role:
         raise APIError("ROLE_NOT_FOUND", "Role not found", 404)
-    get_or_compute_aggregates(db, role_id)
+    get_or_compute_aggregates(db, role_id, force_recompute=True)
     return {"ok": True}
 
 
