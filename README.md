@@ -3,7 +3,7 @@
 ## 📝 Project Overview
 SkillGap is a **locally hosted, security-forward career intelligence platform** that helps users understand and close the gap between their current skills and target roles. Upload a resume, pick a role, and get skill gaps, job matches, learning resources, and a deadline-based plan — with AI running on your machine and your data staying local.
 
-🔗 **Demo / Walkthrough Video:** _Add link here_
+🔗 **Demo / Walkthrough Video:** https://drive.google.com/file/d/1pfgut0sNA2X1oyJbQcsR5RDQXh5jV8zU/view?usp=sharing
 
 ---
 
